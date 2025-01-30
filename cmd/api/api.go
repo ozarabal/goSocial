@@ -1,24 +1,43 @@
 package main
 
 import (
-	"log"
+	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/ozarabal/goSocial/docs"
+	"github.com/ozarabal/goSocial/internal/mailer"
 	"github.com/ozarabal/goSocial/internal/store"
+	httpSwagger "github.com/swaggo/http-swagger"
+	"go.uber.org/zap"
 )
 
 type application struct {
 	config 	config
 	store 	store.Storage
+	logger	*zap.SugaredLogger
+	mailer	mailer.Client
 }
 
 type config struct {
 	addr string
+	apiURL string
 	db dbConfig
 	env string
+	mail mailConfig
+	frontendURL string
+}
+
+type mailConfig struct{
+	sendGrid	sendGridConfig
+	exp time.Duration
+	fromEmail	string 
+}
+
+type sendGridConfig struct{
+	apikey 		string
 }
 
 type dbConfig struct{
@@ -43,6 +62,8 @@ func (app *application) mount() http.Handler {
 
 	r.Route("/v1", func(r chi.Router){
 		r.Get("/health", app.healthCheckHandler)
+		docsURL := fmt.Sprintf("%s/swagger/doc.json", app.config.addr)
+		r.Get("/swagger/*", httpSwagger.Handler(httpSwagger.URL(docsURL)))
 
 		r.Route("/posts", func(r chi.Router){
 			r.Post("/", app.createPostHandler)
@@ -57,6 +78,8 @@ func (app *application) mount() http.Handler {
 		})
 
 		r.Route("/users", func(r chi.Router){
+			r.Put("/activate/{token}", app.activateUserHandler)
+
 			r.Route("/{userID}", func(r chi.Router){
 				r.Use(app.userContextMiddleware)
 				r.Get("/", app.getUserHandler)
@@ -70,14 +93,20 @@ func (app *application) mount() http.Handler {
 				r.Get("/feed", app.getUserFeedHandler)
 			})
 		})
-
-
+		// public routes
+		r.Route("/authentication", func(r chi.Router){
+			r.Post("/user", app.registerUserHandler)
+		})
 	})	
 
 	return r
 }
 
 func (app *application) run(mux http.Handler)error {
+	// Docs
+	docs.SwaggerInfo.Version = version
+	docs.SwaggerInfo.Host = app.config.apiURL
+	docs.SwaggerInfo.BasePath = "/v1"
 
 	srv := &http.Server{
 		Addr : app.config.addr,
@@ -87,7 +116,7 @@ func (app *application) run(mux http.Handler)error {
 		IdleTimeout: time.Minute,
 	}
 
-	log.Printf("server has started at %s", app.config.addr)
+	app.logger.Infow("server has started", "addr", app.config.addr, "env", app.config.env)
 
 	return srv.ListenAndServe()
 }
