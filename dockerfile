@@ -16,6 +16,8 @@ COPY --from=builder /usr/local/bin/migrate /usr/local/bin/migrate
 WORKDIR /app
 
 RUN go install github.com/air-verse/air@latest
+RUN go install github.com/swaggo/swag/cmd/swag@latest
+RUN apk add --no-cache make
 
 # Copy dependensi
 COPY go.mod go.sum ./

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/ozarabal/goSocial/internal/auth"
 	"github.com/ozarabal/goSocial/internal/db"
 	"github.com/ozarabal/goSocial/internal/env"
 	"github.com/ozarabal/goSocial/internal/mailer"
@@ -42,7 +43,7 @@ func main(){
 	cfg := config{
 		addr: env.GetString("ADDR", ":3000"),
 		apiURL: env.GetString("EXTERNAL_URL", "localhost:3000"),
-		frontendURL: env.GetString("FRONTEND_URL", "http://localhost:4000"),
+		frontendURL: env.GetString("FRONTEND_URL", "http://localhost:5173"),
 		db : dbConfig{
 			addr: env.GetString("DB_ADDR", dsn),
 			maxOpenConns: env.GetInt("DB_MAX_OPEN_CONNS", 30),
@@ -56,7 +57,19 @@ func main(){
 			sendGrid: sendGridConfig{
 				apikey: env.GetString("SENDGRID_API_KEY", ""),
 			},
-		},	
+		},
+		auth: authConfig{
+			basic: basicConfig{
+				user: env.GetString("AUTH_BASIC_USER","admin"),
+				pass: env.GetString("AUTH_BASIC_PASS","admin"),
+			},
+			token : tokenConfig{
+				secret: env.GetString("AUTH_TOKEN_SECRET", "example"),
+				exp:	time.Hour * 24 * 3,
+				iss:	"goSocial",
+			},
+		},
+		
 	}
 
 	//
@@ -81,11 +94,17 @@ func main(){
 
 	mailer := mailer.NewSendgrid(cfg.mail.sendGrid.apikey, cfg.mail.fromEmail)
 
+	jwtAuthenticator := auth.NewJWTAuthenticator(
+		cfg.auth.token.secret, 
+		cfg.auth.token.iss, 
+		cfg.auth.token.iss)
+
 	app := &application{
 		config: cfg,
 		store: store,
 		logger: logger,
 		mailer: mailer,
+		authenticator: jwtAuthenticator,
 	}
 	mux := app.mount()
 	logger.Fatal(app.run(mux))

@@ -7,7 +7,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/cors"
 	"github.com/ozarabal/goSocial/docs"
+	"github.com/ozarabal/goSocial/internal/auth"
 	"github.com/ozarabal/goSocial/internal/mailer"
 	"github.com/ozarabal/goSocial/internal/store"
 	httpSwagger "github.com/swaggo/http-swagger"
@@ -19,6 +21,7 @@ type application struct {
 	store 	store.Storage
 	logger	*zap.SugaredLogger
 	mailer	mailer.Client
+	authenticator auth.Authenticator	
 }
 
 type config struct {
@@ -28,7 +31,26 @@ type config struct {
 	env string
 	mail mailConfig
 	frontendURL string
+	auth	authConfig
 }
+
+type authConfig struct{
+	basic basicConfig
+	token tokenConfig
+}
+
+type basicConfig struct{
+	user string
+	pass string
+}
+
+type tokenConfig struct{
+	secret 	string
+	exp		time.Duration
+	iss		string
+}
+
+
 
 type mailConfig struct{
 	sendGrid	sendGridConfig
@@ -49,6 +71,15 @@ type dbConfig struct{
 
 func (app *application) mount() http.Handler {
 	r := chi.NewRouter()
+
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"https://*", "http://*"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
+		ExposedHeaders:   []string{"Link"},
+		AllowCredentials: false,
+		MaxAge:           300, // Maximum value not ignored by any of major browsers
+	}))
 	
 	// log
 	r.Use(middleware.RequestID)
@@ -66,6 +97,7 @@ func (app *application) mount() http.Handler {
 		r.Get("/swagger/*", httpSwagger.Handler(httpSwagger.URL(docsURL)))
 
 		r.Route("/posts", func(r chi.Router){
+			r.Use(app.AuthTokenMiddleware)
 			r.Post("/", app.createPostHandler)
 			
 			r.Route("/{postID}", func(r chi.Router){
@@ -81,7 +113,7 @@ func (app *application) mount() http.Handler {
 			r.Put("/activate/{token}", app.activateUserHandler)
 
 			r.Route("/{userID}", func(r chi.Router){
-				r.Use(app.userContextMiddleware)
+				r.Use(app.AuthTokenMiddleware)
 				r.Get("/", app.getUserHandler)
 				
 				r.Put("/follow", app.followUserHandler)
@@ -96,6 +128,7 @@ func (app *application) mount() http.Handler {
 		// public routes
 		r.Route("/authentication", func(r chi.Router){
 			r.Post("/user", app.registerUserHandler)
+			r.Post("/token", app.createTokenHandler)
 		})
 	})	
 

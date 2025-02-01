@@ -89,7 +89,7 @@ func (s *PostsStorage) GetByID(ctx context.Context, id int64) (*Post,error) {
 
 func (s *PostsStorage) DeleteByID(ctx context.Context, id int64) error{
 	query := `
-		DELETE FROM post
+		DELETE FROM posts
 		WHERE id = $1
 	`
 
