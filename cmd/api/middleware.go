@@ -98,7 +98,7 @@ func (app *application) BasicAuthMiddleware() func(http.Handler) http.Handler{
 func (app *application) checkPostOwnership(requiredRole string, next http.HandlerFunc) http.HandlerFunc{
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request){
 		
-		// check if it is users post
+		// check post owner
 		user := getUserFromContext(r)
 		post := getPostFromCtx(r)
 
