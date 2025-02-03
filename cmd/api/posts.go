@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -171,11 +170,12 @@ func (app *application) updatePostHandler(w http.ResponseWriter, r *http.Request
 		post.Title = *payload.Title
 	}
 
-	if err := app.store.Posts.Update(r.Context(), post); err != nil{
-		fmt.Println("salah di sini")
-		app.internalServerError(w, r, err)
+	ctx := r.Context()
+	if err := app.updatePost(ctx, post); err != nil {
+		app.internalServerError(w,r,err)
 		return
 	}
+
 	if err := app.jsonResponse(w, http.StatusOK, post); err != nil {
 		app.internalServerError(w, r, err)
 	}
@@ -215,4 +215,13 @@ func (app *application) postContextMiddleware(next http.Handler) http.Handler {
 func getPostFromCtx(r *http.Request) *store.Post {
 	post, _ := r.Context().Value("post").(*store.Post)
 	return post
+}
+
+func (app *application) updatePost(ctx context.Context, post *store.Post) error {
+	if err := app.store.Posts.Update(ctx, post); err != nil{
+		return err
+	}
+
+	app.cacheStorage.Users.Delete(ctx, post.UserId)
+	return nil
 }
