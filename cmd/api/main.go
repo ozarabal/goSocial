@@ -5,12 +5,15 @@ import (
 	"log"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/joho/godotenv"
 	"github.com/ozarabal/goSocial/internal/auth"
 	"github.com/ozarabal/goSocial/internal/db"
 	"github.com/ozarabal/goSocial/internal/env"
 	"github.com/ozarabal/goSocial/internal/mailer"
+	"github.com/ozarabal/goSocial/internal/ratelimiter"
 	"github.com/ozarabal/goSocial/internal/store"
+	"github.com/ozarabal/goSocial/internal/store/cache"
 	"go.uber.org/zap"
 )
 
@@ -69,7 +72,17 @@ func main(){
 				iss:	"goSocial",
 			},
 		},
-		
+		redisCfg: redisConfig{
+			addr: env.GetString("REDIS_ADDR", "redis_new:6379"),
+			pw:		env.GetString("REDIS_PW", ""),
+			db:		env.GetInt("REDIS_DB", 0),
+			enable: env.GetBool("REDIS_ENABLE", true),
+		},
+		rateLimiter: ratelimiter.Config{
+			RequestPerTimeFrame: env.GetInt("RATELIMITER_REQUEST_COUNT", 20),
+			TimeFrame: time.Second * 5,
+			Enabled: env.GetBool("RATE_LIMITER_ENABLED", true),
+		},
 	}
 
 	//
@@ -90,7 +103,21 @@ func main(){
 	defer db.Close()
 	logger.Info("database connection pool established")
 
+	var rdb *redis.Client
+	if cfg.redisCfg.enable {
+		rdb = cache.NewRedisClient(cfg.redisCfg.addr, cfg.redisCfg.pw, cfg.redisCfg.db)
+		logger.Info("redis cache connection established")
+	
+		defer rdb.Close()
+	}
+
+	rateLimiter := ratelimiter.NewFixedWindowLimiter(
+		cfg.rateLimiter.RequestPerTimeFrame,
+		cfg.rateLimiter.TimeFrame,
+	)
+
 	store := store.NewPostgresStorage(db)
+	cacheStorage := cache.NewRedisStorage(rdb)
 
 	mailer := mailer.NewSendgrid(cfg.mail.sendGrid.apikey, cfg.mail.fromEmail)
 
@@ -102,9 +129,11 @@ func main(){
 	app := &application{
 		config: cfg,
 		store: store,
+		cacheStorage: cacheStorage,
 		logger: logger,
 		mailer: mailer,
 		authenticator: jwtAuthenticator,
+		rateLimiter: rateLimiter,
 	}
 	mux := app.mount()
 	logger.Fatal(app.run(mux))

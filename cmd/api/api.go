@@ -1,8 +1,13 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -11,7 +16,9 @@ import (
 	"github.com/ozarabal/goSocial/docs"
 	"github.com/ozarabal/goSocial/internal/auth"
 	"github.com/ozarabal/goSocial/internal/mailer"
+	"github.com/ozarabal/goSocial/internal/ratelimiter"
 	"github.com/ozarabal/goSocial/internal/store"
+	"github.com/ozarabal/goSocial/internal/store/cache"
 	httpSwagger "github.com/swaggo/http-swagger"
 	"go.uber.org/zap"
 )
@@ -19,19 +26,23 @@ import (
 type application struct {
 	config 	config
 	store 	store.Storage
+	cacheStorage cache.Storage
 	logger	*zap.SugaredLogger
 	mailer	mailer.Client
-	authenticator auth.Authenticator	
+	authenticator auth.Authenticator
+	rateLimiter	ratelimiter.Limiter
 }
 
 type config struct {
-	addr string
-	apiURL string
-	db dbConfig
-	env string
-	mail mailConfig
+	addr 		string
+	apiURL 		string
+	db 			dbConfig
+	env 		string
+	mail 		mailConfig
 	frontendURL string
-	auth	authConfig
+	auth		authConfig
+	redisCfg	redisConfig
+	rateLimiter	ratelimiter.Config
 }
 
 type authConfig struct{
@@ -50,7 +61,12 @@ type tokenConfig struct{
 	iss		string
 }
 
-
+type redisConfig struct{
+	addr	string
+	pw		string 
+	db		int
+	enable	bool
+}
 
 type mailConfig struct{
 	sendGrid	sendGridConfig
@@ -62,6 +78,7 @@ type sendGridConfig struct{
 	apikey 		string
 }
 
+
 type dbConfig struct{
 	addr 			string
 	maxOpenConns 	int
@@ -72,6 +89,12 @@ type dbConfig struct{
 func (app *application) mount() http.Handler {
 	r := chi.NewRouter()
 
+
+	// log
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"https://*", "http://*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -81,12 +104,10 @@ func (app *application) mount() http.Handler {
 		MaxAge:           300, // Maximum value not ignored by any of major browsers
 	}))
 	
-	// log
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
 
+	if app.config.rateLimiter.Enabled {
+		r.Use(app.RateLimiterMiddleware)
+	}
 	// set a timeout value on middleware on the request context
 
 	r.Use(middleware.Timeout(60 * time.Second))
@@ -149,7 +170,35 @@ func (app *application) run(mux http.Handler)error {
 		IdleTimeout: time.Minute,
 	}
 
+	shutdown := make(chan error)
+
+	go func(){
+		quit := make(chan os.Signal, 1 )
+
+		signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+		s :=  <- quit
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		app.logger.Infow("signal caught", "signal", s.String())
+
+		shutdown <- srv.Shutdown(ctx)
+	}()
+
 	app.logger.Infow("server has started", "addr", app.config.addr, "env", app.config.env)
 
-	return srv.ListenAndServe()
+	err := srv.ListenAndServe()
+	if !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+
+	err = <-shutdown
+	if err != nil {
+		return err 
+	}
+
+	app.logger.Infow("server has stopped", "addr", app.config.addr, "env", app.config.env)
+
+	return nil
 }
