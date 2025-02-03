@@ -54,6 +54,7 @@ func NewPostgresStorage(db *sql.DB) Storage{
 		Users: &UserStore{db},
 		Comments: &CommentsStorage{db},
 		Followers: &FollowerStore{db},
+		Roles: &RoleStore{db},
 	}
 }
 
