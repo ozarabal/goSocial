@@ -15,6 +15,10 @@ type CreatePostPayload struct {
 	Tags	[]string 	`json:"tags"`
 }
 
+
+type contextKey string
+const postKey contextKey = "post"
+
 // CreatePost godoc
 //
 //	@Summary		Creates a post
@@ -206,7 +210,7 @@ func (app *application) postContextMiddleware(next http.Handler) http.Handler {
 		return
 	}
 
-	ctx = context.WithValue(ctx, "post", post)
+	ctx = context.WithValue(ctx, postKey, post)
 	next.ServeHTTP(w, r.WithContext(ctx))
 
 	})
