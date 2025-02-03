@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/ozarabal/goSocial/compare/v1.0.0...v1.1.0) (2025-02-03)
+
+
+### Features
+
+* update api version automatically ([77c58c7](https://github.com/ozarabal/goSocial/commit/77c58c765ef6258819171e4cb25cedd14a9df8af))
+
 ## 1.0.0 (2025-02-03)
 
 
