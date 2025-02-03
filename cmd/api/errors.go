@@ -11,7 +11,7 @@ func (app *application) internalServerError(w http.ResponseWriter, r *http.Reque
 	writeJSONError(w, http.StatusInternalServerError, "the server encountered a problem")
 }
 
-func (app *application) forbiddenResponse(w http.ResponseWriter, r *http.Request, err error) {
+func (app *application) forbiddenResponse(w http.ResponseWriter, r *http.Request) {
 	
 	app.logger.Warnw("forbidden", "method", r.Method, "path", r.URL.Path, "error")
 
