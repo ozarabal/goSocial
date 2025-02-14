@@ -11,7 +11,8 @@ migration:
 
 .PHONY: migrate-up
 migrate-up:
-	@migrate -path=$(MIGRATIONS_PATH) -database=$(DB_ADDR) up || $(MAKE) fix-dirty
+	@migrate -path=$(MIGRATIONS_PATH) -database=postgres://postgres:wHidiAtqVlylthCbmWDvxkWQklfchquR@postgres.railway.internal:5432/railway
+ up || $(MAKE) fix-dirty
 
 .PHONY: migrate-down
 migrate-down:
