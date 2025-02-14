@@ -97,7 +97,8 @@ func (app *application) mount() http.Handler {
 	r.Use(middleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins: []string{
-			"http://localhost:5174",   // for development
+			"http://localhost:5174",   // for frontend development
+			"https://localhost:3000", // for development
 			"https://gosocial-production-730e.up.railway.app", // for production
 		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
