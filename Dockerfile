@@ -25,8 +25,6 @@ RUN apk add --no-cache make
 COPY go.mod go.sum ./
 RUN go mod download
 
-RUN chmod +x /app/bin/main
-
 # Copy seluruh kode proyek
 COPY . .
 
