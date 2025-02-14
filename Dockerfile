@@ -1,4 +1,3 @@
-# Stage 1: Build
 FROM golang:1.23-alpine AS builder
 
 # Install curl dan build tools
@@ -12,30 +11,33 @@ RUN curl -L https://github.com/golang-migrate/migrate/releases/download/v4.16.2/
 # Set working directory
 WORKDIR /app
 
-# Copy module files dan download dependencies
+# Copy go mod dependencies
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy seluruh kode proyek
+# Copy entire project
 COPY . .
 
-# Build aplikasi
-RUN go build -o /app/bin/main ./cmd/api
+# Build binary
+RUN go build -o bin/main ./cmd/api
 
-# Stage 2: Runtime
+# Final stage
 FROM golang:1.23-alpine
 
-# Copy migrate dari builder stage
-COPY --from=builder /usr/local/bin/migrate /usr/local/bin/migrate
-
-# Copy aplikasi dari builder stage
-COPY --from=builder /app/bin/main /app/bin/main
-
-# Pastikan direktori kerja
+# Set working directory
 WORKDIR /app
 
-# Install alat bantu
-RUN apk add --no-cache make
+# Copy migrate from builder
+COPY --from=builder /usr/local/bin/migrate /usr/local/bin/migrate
 
-# Jalankan migrate sebelum aplikasi dimulai
-ENTRYPOINT ["sh", "-c", "make migrate-up && /app/bin/main"]
+# Copy built binary from builder
+COPY --from=builder /app/bin/main /app/bin/main
+
+# Set executable permissions
+RUN chmod +x /app/bin/main
+
+# Expose the application port
+EXPOSE 3000
+
+# Run migrations and start the application
+CMD make migrate-up && /app/bin/main
