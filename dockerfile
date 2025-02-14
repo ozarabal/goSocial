@@ -1,4 +1,3 @@
-# Gunakan multi-stage build
 FROM golang:1.23-alpine AS builder
 
 # Install curl dan build tools
