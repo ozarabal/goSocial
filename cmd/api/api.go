@@ -15,7 +15,6 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/ozarabal/goSocial/docs"
 	"github.com/ozarabal/goSocial/internal/auth"
-	"github.com/ozarabal/goSocial/internal/env"
 	"github.com/ozarabal/goSocial/internal/mailer"
 	"github.com/ozarabal/goSocial/internal/ratelimiter"
 	"github.com/ozarabal/goSocial/internal/store"
@@ -97,7 +96,10 @@ func (app *application) mount() http.Handler {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{env.GetString("CORS_ALLOWED_ORIGIN", "http://localhost:5174")},
+		AllowedOrigins: []string{
+			"http://localhost:5174",   // for development
+			"https://gosocial-production-730e.up.railway.app", // for production
+		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
 		ExposedHeaders:   []string{"Link"},
