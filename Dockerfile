@@ -21,6 +21,12 @@ COPY . .
 # Build aplikasi
 RUN go build -o bin/main ./cmd/api
 
+# Install Swag untuk Swagger Docs
+RUN go install github.com/swaggo/swag/cmd/swag@latest
+
+# Generate Swagger Docs
+RUN make gen-docs
+
 # Tahap akhir
 FROM golang:1.23-alpine
 
@@ -30,13 +36,15 @@ WORKDIR /app
 # Install make
 RUN apk add --no-cache make
 
+
 # Copy migrate dari builder stage
 COPY --from=builder /usr/local/bin/migrate /usr/local/bin/migrate
 
-# Copy file yang dibutuhkan
+# Copy file yang dibutuhkan untuk pre cmd
 COPY --from=builder /app/bin/main /app/bin/main
 COPY --from=builder /app/cmd/migrate/migrations /app/cmd/migrate/migrations
 COPY --from=builder /app/makefile /app/makefile
+COPY --from=builder /app/docs /app/docs
 
 # Berikan permission agar bisa dieksekusi
 RUN chmod +x /app/bin/main
