@@ -12,8 +12,6 @@ services:
       - "3000:3000"
     networks:
       - backend
-    environment:
-      DB_ADDR: postgres://admin:adminpassword@db:5432/social?sslmode=disable
     depends_on:
       - db
       - redis
