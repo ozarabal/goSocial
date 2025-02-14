@@ -35,8 +35,8 @@ COPY --from=builder /usr/local/bin/migrate /usr/local/bin/migrate
 
 # Copy file yang dibutuhkan
 COPY --from=builder /app/bin/main /app/bin/main
-COPY --from=builder /app/migrations /app/migrations
-COPY --from=builder /app/Makefile /app/Makefile
+COPY --from=builder /app/cmd/migrate/migrations /app/cmd/migrate/migrations
+COPY --from=builder /app/makefile /app/makefile
 
 # Berikan permission agar bisa dieksekusi
 RUN chmod +x /app/bin/main
