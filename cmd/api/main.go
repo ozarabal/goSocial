@@ -41,9 +41,11 @@ const version = "0.0.1"
 
 func main(){
 
-	if err := godotenv.Load(); err != nil {
-        log.Fatal("Error loading .env file")
-    }
+	if env.GetString("ENV", "production") != "production" {
+		if err := godotenv.Load(); err != nil {
+			log.Println("Warning: .env file not found, using Railway environment variables")
+		}
+	}
 	dsn := "postgres://admin:adminpassword@127.0.0.1:5432/social?sslmode=disable&client_encoding=UTF8"
 	cfg := config{
 		addr: env.GetString("ADDR", ":3000"),
