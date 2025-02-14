@@ -11,20 +11,20 @@ migration:
 
 .PHONY: migrate-up
 migrate-up:
-	@docker exec -it app migrate -path=$(MIGRATIONS_PATH) -database=$(DB_ADDR) up || $(MAKE) fix-dirty
+	@migrate -path=$(MIGRATIONS_PATH) -database=$(DB_ADDR) up || $(MAKE) fix-dirty
 
 .PHONY: migrate-down
 migrate-down:
-	@docker exec -it app migrate -path=$(MIGRATIONS_PATH) -database=$(DB_ADDR) down $(filter-out $@,$(MAKECMDGOALS)) || $(MAKE) fix-dirty
+	@migrate -path=$(MIGRATIONS_PATH) -database=$(DB_ADDR) down $(filter-out $@,$(MAKECMDGOALS)) || $(MAKE) fix-dirty
 
 .PHONY: check-dirty
 check-dirty:
-	@docker exec -it db psql $(DB_ADDR) -c "SELECT version, dirty FROM schema_migrations ORDER BY version DESC LIMIT 1;" | grep -q 't' && echo "Dirty database detected!" || echo "Database is clean."
+	@railway run psql $(DB_ADDR) -c "SELECT version, dirty FROM schema_migrations ORDER BY version DESC LIMIT 1;" | grep -q 't' && echo "Dirty database detected!" || echo "Database is clean."
 
 .PHONY: fix-dirty
 fix-dirty:
 	@echo "Fixing dirty database..."
-	@docker exec -it db psql $(DB_ADDR) -c "UPDATE schema_migrations SET dirty = FALSE WHERE dirty = TRUE;"
+	@railway run psql $(DB_ADDR) -c "UPDATE schema_migrations SET dirty = FALSE WHERE dirty = TRUE;"
 	@echo "Dirty database flag cleared. You can now reapply the migration."
 
 
