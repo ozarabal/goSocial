@@ -45,4 +45,4 @@ RUN chmod +x /app/bin/main
 EXPOSE 3000
 
 # Jalankan migrate sebelum aplikasi dimulai
-CMD make migrate && ./bin/main
+CMD make migrate-up && ./bin/main
