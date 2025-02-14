@@ -20,7 +20,7 @@ RUN go mod download
 COPY . .
 
 # Build aplikasi
-RUN go build -o /app/bin/main ./cmd/main.go
+RUN go build -o /app/bin/main ./cmd/api/main.go
 
 # Stage 2: Runtime
 FROM golang:1.23-alpine
