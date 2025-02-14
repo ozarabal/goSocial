@@ -58,6 +58,8 @@ func (app *application) registerUserHandler(w http.ResponseWriter, r *http.Reque
 		app.internalServerError(w, r, err)
 		return
 	}
+	app.logger.Infow("payload valid", "payload", payload)
+	app.logger.Infow("storing user", "user", user)
 
 	ctx := r.Context()
 
