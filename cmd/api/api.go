@@ -160,7 +160,7 @@ func (app *application) run(mux http.Handler)error {
 	// Docs
 	docs.SwaggerInfo.Version = version
 	docs.SwaggerInfo.Host = app.config.apiURL
-	docs.SwaggerInfo.BasePath = "/v1"
+	docs.SwaggerInfo.BasePath = "v1"
 
 	srv := &http.Server{
 		Addr : app.config.addr,
