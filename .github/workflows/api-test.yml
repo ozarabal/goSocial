@@ -68,7 +68,7 @@ jobs:
       - name: Install dependencies
         run: |
           go mod download
-          go install github.com/stretchr/testify/assert@latest
+          go mod tidy
 
       - name: Validate Go modules
         run: |
@@ -101,7 +101,9 @@ jobs:
             ${{ runner.os }}-go-
 
       - name: Install dependencies
-        run: go mod download
+        run: |
+          go mod download
+          go mod tidy
 
       - name: Run unit tests
         run: |
