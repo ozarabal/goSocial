@@ -2,7 +2,6 @@ package auth
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/suite"
 	"github.com/ozarabal/goSocial/tests/config"
@@ -320,15 +319,6 @@ func (suite *AuthTestSuite) TestRateLimiting() {
 	if !suite.config.API.RateLimits.TestRateLimit {
 		suite.T().Skip("Rate limiting tests disabled")
 		return
-	}
-	
-	// Since rate limiting is disabled in CI environment (RATE_LIMITER_ENABLED: false),
-	// we expect normal responses instead of 429
-	user := suite.userFactory.Create()
-	payload := map[string]interface{}{
-		"username": user.Username,
-		"email":    user.Email,
-		"password": user.Password,
 	}
 	
 	// Make multiple requests - should all succeed since rate limiting is disabled in CI
