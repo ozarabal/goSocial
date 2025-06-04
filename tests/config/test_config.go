@@ -7,7 +7,6 @@ import (
 	"time"
 )
 
-// TestConfig holds all test configuration
 type TestConfig struct {
 	API      APIConfig      `json:"api"`
 	Database DatabaseConfig `json:"database"`
@@ -17,7 +16,6 @@ type TestConfig struct {
 	Reports  ReportsConfig  `json:"reports"`
 }
 
-// APIConfig holds API-related configuration
 type APIConfig struct {
 	BaseURL     string            `json:"base_url"`
 	Version     string            `json:"version"`
@@ -27,7 +25,6 @@ type APIConfig struct {
 	RateLimits  RateLimitConfig   `json:"rate_limits"`
 }
 
-// DatabaseConfig holds database configuration for tests
 type DatabaseConfig struct {
 	CleanupBetweenTests bool   `json:"cleanup_between_tests"`
 	UseTransactions     bool   `json:"use_transactions"`
@@ -35,7 +32,6 @@ type DatabaseConfig struct {
 	TestDataPath       string `json:"test_data_path"`
 }
 
-// AuthConfig holds authentication configuration
 type AuthConfig struct {
 	DefaultUsername string        `json:"default_username"`
 	DefaultPassword string        `json:"default_password"`
@@ -44,7 +40,6 @@ type AuthConfig struct {
 	AdminPassword   string        `json:"admin_password"`
 }
 
-// TimeoutConfig holds timeout configuration
 type TimeoutConfig struct {
 	APIRequest      time.Duration `json:"api_request"`
 	DatabaseQuery   time.Duration `json:"database_query"`
@@ -52,22 +47,19 @@ type TimeoutConfig struct {
 	SetupTeardown   time.Duration `json:"setup_teardown"`
 }
 
-// ParallelConfig holds parallel execution configuration
 type ParallelConfig struct {
 	Enabled        bool `json:"enabled"`
 	MaxConcurrency int  `json:"max_concurrency"`
 }
 
-// ReportsConfig holds test reporting configuration
 type ReportsConfig struct {
 	OutputDir      string `json:"output_dir"`
-	Format         string `json:"format"` // json, xml, html
+	Format         string `json:"format"`
 	IncludeDetails bool   `json:"include_details"`
 	SaveRequests   bool   `json:"save_requests"`
 	SaveResponses  bool   `json:"save_responses"`
 }
 
-// RateLimitConfig holds rate limiting configuration for testing
 type RateLimitConfig struct {
 	RequestsPerSecond int           `json:"requests_per_second"`
 	BurstSize         int           `json:"burst_size"`
@@ -75,7 +67,6 @@ type RateLimitConfig struct {
 	RateLimitDelay    time.Duration `json:"rate_limit_delay"`
 }
 
-// Environment represents different test environments
 type Environment string
 
 const (
@@ -83,9 +74,9 @@ const (
 	EnvDevelopment Environment = "development"
 	EnvStaging     Environment = "staging"
 	EnvProduction  Environment = "production"
+	EnvCI          Environment = "ci"
 )
 
-// GetTestConfig returns configuration based on environment
 func GetTestConfig() *TestConfig {
 	env := getEnv("TEST_ENV", "local")
 	
@@ -97,9 +88,9 @@ func GetTestConfig() *TestConfig {
 			RetryCount: getEnvInt("API_RETRY_COUNT", 3),
 			RetryDelay: getEnvDuration("API_RETRY_DELAY", 1*time.Second),
 			RateLimits: RateLimitConfig{
-				RequestsPerSecond: getEnvInt("RATE_LIMIT_RPS", 20),
+				RequestsPerSecond: getEnvInt("RATE_LIMIT_RPS", getDefaultRPS(Environment(env))),
 				BurstSize:         getEnvInt("RATE_LIMIT_BURST", 5),
-				TestRateLimit:     getEnvBool("TEST_RATE_LIMIT", true),
+				TestRateLimit:     getEnvBool("TEST_RATE_LIMIT", shouldTestRateLimit(Environment(env))),
 				RateLimitDelay:    getEnvDuration("RATE_LIMIT_DELAY", 5*time.Second),
 			},
 		},
@@ -123,7 +114,7 @@ func GetTestConfig() *TestConfig {
 			SetupTeardown:   getEnvDuration("TIMEOUT_SETUP", 30*time.Second),
 		},
 		Parallel: ParallelConfig{
-			Enabled:        getEnvBool("PARALLEL_ENABLED", false),
+			Enabled:        getEnvBool("PARALLEL_ENABLED", shouldEnableParallel(Environment(env))),
 			MaxConcurrency: getEnvInt("MAX_CONCURRENCY", 4),
 		},
 		Reports: ReportsConfig{
@@ -138,10 +129,11 @@ func GetTestConfig() *TestConfig {
 	return config
 }
 
-// getDefaultBaseURL returns default base URL for environment
 func getDefaultBaseURL(env Environment) string {
 	switch env {
 	case EnvLocal:
+		return "http://localhost:3000/v1"
+	case EnvCI:
 		return "http://localhost:3000/v1"
 	case EnvDevelopment:
 		return "https://dev-api.gosocial.com/v1"
@@ -154,7 +146,6 @@ func getDefaultBaseURL(env Environment) string {
 	}
 }
 
-// getDefaultHeaders returns default headers for all requests
 func getDefaultHeaders() map[string]string {
 	return map[string]string{
 		"Content-Type": "application/json",
@@ -163,7 +154,39 @@ func getDefaultHeaders() map[string]string {
 	}
 }
 
-// Helper functions for environment variables
+func getDefaultRPS(env Environment) int {
+	switch env {
+	case EnvCI:
+		return 1000 // High limit for CI since rate limiting is disabled
+	case EnvLocal:
+		return 20
+	default:
+		return 20
+	}
+}
+
+func shouldTestRateLimit(env Environment) bool {
+	switch env {
+	case EnvCI:
+		return false // Rate limiting is disabled in CI
+	case EnvLocal:
+		return false // Usually disabled for local testing
+	default:
+		return true
+	}
+}
+
+func shouldEnableParallel(env Environment) bool {
+	switch env {
+	case EnvCI:
+		return false // Disable parallel tests in CI for stability
+	case EnvLocal:
+		return false
+	default:
+		return false
+	}
+}
+
 func getEnv(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
@@ -198,7 +221,6 @@ func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 	return defaultValue
 }
 
-// Validate validates the configuration
 func (c *TestConfig) Validate() error {
 	if c.API.BaseURL == "" {
 		return fmt.Errorf("API base URL is required")
@@ -219,25 +241,30 @@ func (c *TestConfig) Validate() error {
 	return nil
 }
 
-// GetFullURL returns full URL with base URL and endpoint
 func (c *TestConfig) GetFullURL(endpoint string) string {
 	return c.API.BaseURL + endpoint
 }
 
-// IsLocalEnvironment checks if running in local environment
 func (c *TestConfig) IsLocalEnvironment() bool {
 	return c.API.BaseURL == "http://localhost:3000/v1"
 }
 
-// ShouldSkipTest determines if test should be skipped based on environment
+func (c *TestConfig) IsCIEnvironment() bool {
+	return os.Getenv("TEST_ENV") == "ci"
+}
+
 func (c *TestConfig) ShouldSkipTest(testType string) bool {
 	switch testType {
 	case "load":
-		return c.IsLocalEnvironment() // Skip load tests in local
+		return c.IsLocalEnvironment()
 	case "security":
-		return false // Always run security tests
+		return false
 	case "integration":
-		return false // Always run integration tests
+		return false
+	case "parallel":
+		return !c.Parallel.Enabled
+	case "ratelimit":
+		return !c.API.RateLimits.TestRateLimit
 	default:
 		return false
 	}

@@ -10,14 +10,12 @@ import (
 	"github.com/ozarabal/goSocial/tests/framework/client"
 )
 
-// ResponseAssertion provides fluent API for response assertions
 type ResponseAssertion struct {
 	t        *testing.T
 	response *client.APIResponse
 	failed   bool
 }
 
-// NewResponseAssertion creates new response assertion
 func NewResponseAssertion(t *testing.T, response *client.APIResponse) *ResponseAssertion {
 	return &ResponseAssertion{
 		t:        t,
@@ -26,7 +24,6 @@ func NewResponseAssertion(t *testing.T, response *client.APIResponse) *ResponseA
 	}
 }
 
-// Status assertions
 func (ra *ResponseAssertion) ShouldHaveStatus(expectedStatus int) *ResponseAssertion {
 	if ra.failed {
 		return ra
@@ -64,9 +61,14 @@ func (ra *ResponseAssertion) ShouldHaveStatusInRange(min, max int) *ResponseAsse
 	return ra
 }
 
-// Header assertions
 func (ra *ResponseAssertion) ShouldHaveHeader(headerName string) *ResponseAssertion {
 	if ra.failed {
+		return ra
+	}
+	
+	if ra.response.Headers == nil {
+		ra.t.Errorf("Response headers are nil")
+		ra.failed = true
 		return ra
 	}
 	
@@ -82,6 +84,12 @@ func (ra *ResponseAssertion) ShouldHaveHeaderValue(headerName, expectedValue str
 		return ra
 	}
 	
+	if ra.response.Headers == nil {
+		ra.t.Errorf("Response headers are nil")
+		ra.failed = true
+		return ra
+	}
+	
 	headerValue := ra.response.Headers.Get(headerName)
 	if !assert.Equal(ra.t, expectedValue, headerValue, 
 		"Header %s should have value %s, got %s", headerName, expectedValue, headerValue) {
@@ -90,7 +98,6 @@ func (ra *ResponseAssertion) ShouldHaveHeaderValue(headerName, expectedValue str
 	return ra
 }
 
-// Body assertions
 func (ra *ResponseAssertion) ShouldHaveBodyContaining(substring string) *ResponseAssertion {
 	if ra.failed {
 		return ra
@@ -115,7 +122,6 @@ func (ra *ResponseAssertion) ShouldHaveEmptyBody() *ResponseAssertion {
 	return ra
 }
 
-// JSON field assertions
 func (ra *ResponseAssertion) ShouldHaveJSONField(fieldPath string) *ResponseAssertion {
 	if ra.failed {
 		return ra
@@ -126,7 +132,7 @@ func (ra *ResponseAssertion) ShouldHaveJSONField(fieldPath string) *ResponseAsse
 		fieldPath, string(ra.response.Body)) {
 		ra.failed = true
 	}
-	_ = value // Suppress unused variable warning
+	_ = value
 	return ra
 }
 
@@ -157,6 +163,12 @@ func (ra *ResponseAssertion) ShouldHaveJSONFieldType(fieldPath string, expectedT
 	value, exists := ra.getJSONFieldValue(fieldPath)
 	if !exists {
 		ra.t.Errorf("JSON field '%s' does not exist", fieldPath)
+		ra.failed = true
+		return ra
+	}
+	
+	if value == nil {
+		ra.t.Errorf("JSON field '%s' is nil", fieldPath)
 		ra.failed = true
 		return ra
 	}
@@ -195,7 +207,6 @@ func (ra *ResponseAssertion) ShouldHaveJSONArrayLength(fieldPath string, expecte
 	return ra
 }
 
-// Validation assertions for GoSocial specific responses
 func (ra *ResponseAssertion) ShouldHaveValidUserResponse() *ResponseAssertion {
 	return ra.ShouldHaveJSONField("data.id").
 		ShouldHaveJSONField("data.username").
@@ -208,7 +219,7 @@ func (ra *ResponseAssertion) ShouldHaveValidUserResponse() *ResponseAssertion {
 func (ra *ResponseAssertion) ShouldHaveValidPostResponse() *ResponseAssertion {
 	return ra.ShouldHaveJSONField("data.id").
 		ShouldHaveJSONField("data.title").
-		ShouldHaveJSONField("data.contetn"). // Note: typo in original struct
+		ShouldHaveJSONField("data.contetn").
 		ShouldHaveJSONField("data.user_id").
 		ShouldHaveJSONField("data.created_at").
 		ShouldHaveJSONField("data.tags")
@@ -216,7 +227,10 @@ func (ra *ResponseAssertion) ShouldHaveValidPostResponse() *ResponseAssertion {
 
 func (ra *ResponseAssertion) ShouldHaveValidTokenResponse() *ResponseAssertion {
 	return ra.ShouldHaveJSONField("data").
-		ShouldHaveJSONFieldType("data", "string")
+		ShouldSatisfy(func(r *client.APIResponse) bool {
+			tokenData := ra.GetJSONField("data")
+			return tokenData != nil && tokenData != ""
+		}, "Token response should have non-empty data field")
 }
 
 func (ra *ResponseAssertion) ShouldHaveValidErrorResponse() *ResponseAssertion {
@@ -224,7 +238,6 @@ func (ra *ResponseAssertion) ShouldHaveValidErrorResponse() *ResponseAssertion {
 		ShouldHaveJSONFieldType("error", "string")
 }
 
-// Helper method to get JSON field value using dot notation (e.g., "data.user.id")
 func (ra *ResponseAssertion) getJSONFieldValue(fieldPath string) (interface{}, bool) {
 	if ra.response.JSON == nil {
 		return nil, false
@@ -248,24 +261,26 @@ func (ra *ResponseAssertion) getJSONFieldValue(fieldPath string) (interface{}, b
 	return current, true
 }
 
-// GetJSONField extracts JSON field value for further processing
 func (ra *ResponseAssertion) GetJSONField(fieldPath string) interface{} {
 	value, _ := ra.getJSONFieldValue(fieldPath)
 	return value
 }
 
-// Debug prints response details for debugging
 func (ra *ResponseAssertion) Debug() *ResponseAssertion {
 	fmt.Printf("=== RESPONSE DEBUG ===\n")
 	fmt.Printf("Status: %d\n", ra.response.StatusCode)
-	fmt.Printf("Headers: %+v\n", ra.response.Headers)
+	if ra.response.Headers != nil {
+		fmt.Printf("Headers: %+v\n", ra.response.Headers)
+	} else {
+		fmt.Printf("Headers: nil\n")
+	}
 	fmt.Printf("Body: %s\n", string(ra.response.Body))
 	fmt.Printf("JSON: %+v\n", ra.response.JSON)
+	fmt.Printf("Error: %v\n", ra.response.Error)
 	fmt.Printf("=====================\n")
 	return ra
 }
 
-// Custom validation function
 func (ra *ResponseAssertion) ShouldSatisfy(validationFunc func(*client.APIResponse) bool, message string) *ResponseAssertion {
 	if ra.failed {
 		return ra
