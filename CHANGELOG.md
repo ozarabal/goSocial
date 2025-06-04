@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.2.0](https://github.com/ozarabal/goSocial/compare/v1.1.0...v1.2.0) (2025-06-04)
+
+
+### Features
+
+* add migration cmd to dockerfile ([b39e6e6](https://github.com/ozarabal/goSocial/commit/b39e6e638b238e22f53e2489fed000380efc13b2))
+* Dockerfile production ([b058e0a](https://github.com/ozarabal/goSocial/commit/b058e0a3fd0355115922b01ece98ec9b74ae31f4))
+
+
+### Bug Fixes
+
+* api cors for production ([6900f75](https://github.com/ozarabal/goSocial/commit/6900f7579a376df3f45d3f40203c63df7d2a4576))
+* correct typo in DB URL in Makefile ([a797eba](https://github.com/ozarabal/goSocial/commit/a797eba4c11dd25b558c535bfa547b3a72fb0000))
+* create users ([96ebbbe](https://github.com/ozarabal/goSocial/commit/96ebbbec19cc684f35518ee09456ed04c20c90f9))
+* dependecies conflict ([320b7d8](https://github.com/ozarabal/goSocial/commit/320b7d868256a2f3482cebc18fadfb75bfbfe401))
+* dockerfile ([0c16702](https://github.com/ozarabal/goSocial/commit/0c16702838939df2b2c221cb843ada496eb8ec3f))
+* dockerfile ([d0b7242](https://github.com/ozarabal/goSocial/commit/d0b724206b36750faa99e56d2101bfc59385b932))
+* dockerfile ([349f9bd](https://github.com/ozarabal/goSocial/commit/349f9bd0e1a744b44f6464603f4a9ccf558c3a34))
+* dockerfile ([2933dad](https://github.com/ozarabal/goSocial/commit/2933dad9593a231d89cf6304ec4568fca1a14a0b))
+* makefile ([f74abea](https://github.com/ozarabal/goSocial/commit/f74abeafe86b618863c7f17a4ed6040b37943a9a))
+* makefile migration ([84978db](https://github.com/ozarabal/goSocial/commit/84978dbdf5dcabe897463f0b4e8a7bcbef35aedd))
+
 ## [1.1.0](https://github.com/ozarabal/goSocial/compare/v1.0.0...v1.1.0) (2025-02-03)
 
 
