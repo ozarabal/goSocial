@@ -1,0 +1,463 @@
+name: API Test Automation
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'cmd/**'
+      - 'internal/**' 
+      - 'tests/**'
+      - 'go.mod'
+      - 'go.sum'
+      - '.github/workflows/api-tests.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'cmd/**'
+      - 'internal/**'
+      - 'tests/**'
+      - 'go.mod'
+      - 'go.sum'
+  schedule:
+    - cron: '0 2 * * *' # Daily at 2 AM
+  workflow_dispatch: # Manual trigger
+
+env:
+  GO_VERSION: '1.23'
+  TEST_ENV: ci
+  
+jobs:
+  # Setup and validation job
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      api-changed: ${{ steps.changes.outputs.api }}
+      tests-changed: ${{ steps.changes.outputs.tests }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check for changes
+        uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            api:
+              - 'cmd/**'
+              - 'internal/**'
+              - 'go.mod'
+              - 'go.sum'
+            tests:
+              - 'tests/**'
+              - '.github/workflows/api-tests.yml'
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install dependencies
+        run: |
+          go mod download
+          go install github.com/stretchr/testify/assert@latest
+
+      - name: Validate Go modules
+        run: |
+          go mod verify
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+
+  # Unit tests job
+  unit-tests:
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.api-changed == 'true' || needs.setup.outputs.tests-changed == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install dependencies
+        run: go mod download
+
+      - name: Run unit tests
+        run: |
+          go test -v -race -short ./cmd/... ./internal/... \
+            -coverprofile=coverage.out \
+            -covermode=atomic \
+            -timeout=5m
+
+      - name: Upload unit test coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.out
+          flags: unittests
+          name: unit-tests
+
+  # API integration tests job
+  api-tests:
+    runs-on: ubuntu-latest
+    needs: [setup, unit-tests]
+    if: always() && (needs.setup.outputs.api-changed == 'true' || needs.setup.outputs.tests-changed == 'true')
+    
+    services:
+      postgres:
+        image: postgres:16.3
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: adminpassword
+          POSTGRES_DB: social_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:6.2-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Cache Go modules
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+
+      - name: Install dependencies
+        run: |
+          go mod download
+          sudo apt-get update
+          sudo apt-get install -y curl
+
+      - name: Install migrate tool
+        run: |
+          curl -L https://github.com/golang-migrate/migrate/releases/download/v4.16.2/migrate.linux-amd64.tar.gz | tar xvz
+          sudo mv migrate /usr/local/bin/migrate
+          sudo chmod +x /usr/local/bin/migrate
+
+      - name: Install Swag
+        run: go install github.com/swaggo/swag/cmd/swag@latest
+
+      - name: Generate API docs
+        run: make gen-docs
+
+      - name: Run database migrations
+        env:
+          DB_ADDR: postgres://admin:adminpassword@localhost:5432/social_test?sslmode=disable
+        run: |
+          migrate -path=./cmd/migrate/migrations -database="$DB_ADDR" up
+
+      - name: Build application
+        run: go build -o bin/main ./cmd/api
+
+      - name: Start application
+        env:
+          ENV: test
+          ADDR: :3000
+          DB_ADDR: postgres://admin:adminpassword@localhost:5432/social_test?sslmode=disable
+          REDIS_ADDR: localhost:6379
+          REDIS_ENABLE: true
+          AUTH_TOKEN_SECRET: test-secret-key
+          RATE_LIMITER_ENABLED: true
+        run: |
+          ./bin/main &
+          APP_PID=$!
+          echo "APP_PID=$APP_PID" >> $GITHUB_ENV
+          
+          # Wait for application to start
+          for i in {1..30}; do
+            if curl -f http://localhost:3000/v1/health; then
+              echo "Application is ready"
+              break
+            fi
+            echo "Waiting for application to start... ($i/30)"
+            sleep 2
+          done
+
+      - name: Run smoke tests
+        env:
+          TEST_ENV: ci
+          API_BASE_URL: http://localhost:3000/v1
+        run: make test-smoke
+
+      - name: Run authentication tests
+        env:
+          TEST_ENV: ci
+          API_BASE_URL: http://localhost:3000/v1
+          PARALLEL_ENABLED: true
+        run: make test-api-auth
+
+      - name: Run user tests
+        env:
+          TEST_ENV: ci
+          API_BASE_URL: http://localhost:3000/v1
+          PARALLEL_ENABLED: true
+        run: make test-api-users
+
+      - name: Run post tests
+        env:
+          TEST_ENV: ci
+          API_BASE_URL: http://localhost:3000/v1
+          PARALLEL_ENABLED: true
+        run: make test-api-posts
+
+      - name: Run security tests
+        env:
+          TEST_ENV: ci
+          API_BASE_URL: http://localhost:3000/v1
+        run: make test-security
+
+      - name: Generate API test coverage
+        env:
+          TEST_ENV: ci
+          API_BASE_URL: http://localhost:3000/v1
+        run: make test-api-coverage
+
+      - name: Upload API test coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./tests/reports/api-coverage.out
+          flags: apitests
+          name: api-tests
+
+      - name: Generate test report
+        env:
+          TEST_ENV: ci
+          API_BASE_URL: http://localhost:3000/v1
+        run: make test-api-json
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: api-test-results
+          path: |
+            tests/reports/
+            tests/logs/
+          retention-days: 30
+
+      - name: Stop application
+        if: always()
+        run: |
+          if [ ! -z "$APP_PID" ]; then
+            kill $APP_PID || true
+          fi
+
+  # Performance tests job
+  performance-tests:
+    runs-on: ubuntu-latest
+    needs: [api-tests]
+    if: github.event_name == 'schedule' || contains(github.event.head_commit.message, '[perf-test]')
+    
+    services:
+      postgres:
+        image: postgres:16.3
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: adminpassword
+          POSTGRES_DB: social_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:6.2-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Start application
+        env:
+          ENV: test
+          DB_ADDR: postgres://admin:adminpassword@localhost:5432/social_test?sslmode=disable
+          REDIS_ADDR: localhost:6379
+        run: |
+          go build -o bin/main ./cmd/api
+          ./bin/main &
+          sleep 10
+
+      - name: Run performance tests
+        env:
+          TEST_ENV: ci
+          API_BASE_URL: http://localhost:3000/v1
+        run: make test-performance
+
+      - name: Upload performance results
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-test-results
+          path: tests/reports/performance/
+
+  # Security scan job
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: setup
+    if: needs.setup.outputs.api-changed == 'true' || needs.setup.outputs.tests-changed == 'true'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run GoSec security scanner
+        uses: securecodewarrior/github-action-gosec@master
+        with:
+          args: '-fmt sarif -out gosec-results.sarif ./...'
+
+      - name: Upload GoSec results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: gosec-results.sarif
+
+      - name: Run Nancy vulnerability scanner
+        run: |
+          go install github.com/sonatypecommunity/nancy@latest
+          go list -json -m all | nancy sleuth
+
+  # Test report job
+  test-report:
+    runs-on: ubuntu-latest
+    needs: [unit-tests, api-tests]
+    if: always() && (needs.unit-tests.result != 'skipped' || needs.api-tests.result != 'skipped')
+
+    steps:
+      - name: Download test artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: api-test-results
+          path: test-results/
+
+      - name: Generate test summary
+        run: |
+          echo "# 🧪 API Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "test-results/api-test-results.json" ]; then
+            echo "## 📊 Test Summary" >> $GITHUB_STEP_SUMMARY
+            echo "- **Unit Tests**: ${{ needs.unit-tests.result }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **API Tests**: ${{ needs.api-tests.result }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Security Scan**: ${{ needs.security-scan.result }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "## 📁 Artifacts" >> $GITHUB_STEP_SUMMARY
+            echo "- Test results and coverage reports are available in the artifacts section." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Test results not found" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Comment PR with test results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            
+            let comment = '## 🧪 API Test Results\n\n';
+            comment += `- **Unit Tests**: ${{ needs.unit-tests.result }}\n`;
+            comment += `- **API Tests**: ${{ needs.api-tests.result }}\n`;
+            comment += `- **Security Scan**: ${{ needs.security-scan.result }}\n\n`;
+            
+            if ('${{ needs.unit-tests.result }}' === 'success' && 
+                '${{ needs.api-tests.result }}' === 'success' && 
+                '${{ needs.security-scan.result }}' === 'success') {
+              comment += '✅ All tests passed! Ready for merge.\n';
+            } else {
+              comment += '❌ Some tests failed. Please check the details above.\n';
+            }
+            
+            comment += '\n📊 Detailed reports are available in the [Actions tab](' + 
+                      context.payload.repository.html_url + '/actions/runs/' + context.runId + ').\n';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  # Notification job
+  notification:
+    runs-on: ubuntu-latest
+    needs: [unit-tests, api-tests, security-scan]
+    if: always() && github.event_name != 'pull_request'
+
+    steps:
+      - name: Notify on failure
+        if: contains(needs.*.result, 'failure')
+        run: |
+          echo "🚨 Tests failed! Check the workflow for details."
+          # Add notification logic here (Slack, email, etc.)
+
+      - name: Notify on success
+        if: needs.unit-tests.result == 'success' && needs.api-tests.result == 'success' && needs.security-scan.result == 'success'
+        run: |
+          echo "✅ All tests passed successfully!"
+          # Add success notification logic here

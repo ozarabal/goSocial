@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  db-test:
+    image: postgres:16.3
+    container_name: gosocial-db-test
+    environment:
+      POSTGRES_DB: social_test
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: adminpassword
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    ports:
+      - "5433:5432"
+    networks:
+      - test-network
+    volumes:
+      - test-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d social_test -h localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
+
+  redis-test:
+    image: redis:6.2-alpine
+    container_name: gosocial-redis-test
+    ports:
+      - "6380:6379"
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  app-test:
+    container_name: gosocial-app-test
+    build: 
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      - ENV=test
+      - ADDR=:3000
+      - DB_ADDR=postgres://admin:adminpassword@db-test:5432/social_test?sslmode=disable
+      - REDIS_ADDR=redis-test:6379
+      - REDIS_ENABLE=true
+      - RATE_LIMITER_ENABLED=true
+      - RATELIMITER_REQUEST_COUNT=100
+      - AUTH_TOKEN_SECRET=test-secret-key-for-testing-only
+      - AUTH_BASIC_USER=admin
+      - AUTH_BASIC_PASS=admin
+      - SENDGRID_API_KEY=test-key-disabled
+      - FROM_EMAIL=test@gosocial.com
+      - FRONTEND_URL=http://localhost:3000
+      - EXTERNAL_URL=localhost:3001
+    ports:
+      - "3001:3000"
+    depends_on:
+      db-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+    networks:
+      - test-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 90s
+
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test-runner
+    container_name: gosocial-test-runner
+    environment:
+      - TEST_ENV=docker
+      - API_BASE_URL=http://app-test:3000/v1
+      - PARALLEL_ENABLED=true
+      - DB_CLEANUP_BETWEEN_TESTS=true
+      - GO111MODULE=on
+      - CGO_ENABLED=0
+    depends_on:
+      app-test:
+        condition: service_healthy
+    networks:
+      - test-network
+    volumes:
+      - .:/app/source
+      - ./tests/reports:/app/source/tests/reports
+    working_dir: /app/source
+    command: ["make", "test-api"]
+    profiles:
+      - testing
+
+volumes:
+  test-db-data:
+
+networks:
+  test-network:
+    driver: bridge

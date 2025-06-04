@@ -1,0 +1,33 @@
+FROM golang:1.23-alpine
+
+# Install test dependencies
+RUN apk add --no-cache make curl git
+
+# Create app directory
+WORKDIR /app
+
+# Create source directory
+RUN mkdir -p /app/source
+
+# Create test reports directory
+RUN mkdir -p /app/source/tests/reports
+
+# Create wait script for API directly in the image
+RUN echo '#!/bin/sh' > /wait-for-api.sh && \
+    echo 'echo "🧪 Starting Test Runner..."' >> /wait-for-api.sh && \
+    echo 'echo "⏳ Waiting for API to be ready..."' >> /wait-for-api.sh && \
+    echo '' >> /wait-for-api.sh && \
+    echo 'until curl -f http://app-test:3000/v1/health > /dev/null 2>&1; do' >> /wait-for-api.sh && \
+    echo '  echo "API not ready, waiting..."' >> /wait-for-api.sh && \
+    echo '  sleep 5' >> /wait-for-api.sh && \
+    echo 'done' >> /wait-for-api.sh && \
+    echo '' >> /wait-for-api.sh && \
+    echo 'echo "✅ API is ready!"' >> /wait-for-api.sh && \
+    echo 'echo "🧪 Running tests..."' >> /wait-for-api.sh && \
+    chmod +x /wait-for-api.sh
+
+# Set working directory for tests
+WORKDIR /app/source
+
+# Set default command
+CMD ["/wait-for-api.sh"]

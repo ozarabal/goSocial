@@ -1,0 +1,36 @@
+FROM golang:1.23-alpine AS builder
+
+# Install curl and build tools
+RUN apk add --no-cache curl make
+
+# Download and install migrate
+RUN curl -L https://github.com/golang-migrate/migrate/releases/download/v4.16.2/migrate.linux-amd64.tar.gz | tar xvz && \
+    mv migrate /usr/local/bin/migrate && \
+    chmod +x /usr/local/bin/migrate
+
+FROM golang:1.23-alpine
+
+# Copy migrate from builder stage
+COPY --from=builder /usr/local/bin/migrate /usr/local/bin/migrate
+
+# Install required packages
+WORKDIR /app
+RUN apk add --no-cache make curl postgresql-client
+
+# Copy dependencies first for better caching
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the application
+RUN go build -o bin/main ./cmd/api
+
+# Copy the wait script
+COPY scripts/wait-for-db.sh /wait-for-db.sh
+RUN chmod +x /wait-for-db.sh
+
+EXPOSE 3000
+
+CMD ["/wait-for-db.sh"]
