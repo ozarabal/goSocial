@@ -96,10 +96,10 @@ test-smoke:
 .PHONY: test-install-deps
 test-install-deps:
 	@echo "Installing test dependencies..."
+	@go mod verify
+	@go mod download
 	@go mod tidy
-	@go get github.com/stretchr/testify/suite
-	@go get github.com/go-resty/resty/v2
-	@go get github.com/brianvoe/gofakeit/v6
+	@echo "✅ Dependencies ready"
 
 # =============================================================================
 # DOCKER TEST AUTOMATION COMMANDS
